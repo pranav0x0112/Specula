@@ -1,0 +1,36 @@
+# ---- Build outputs ----
+build/
+*.o
+*.cxx
+*.h
+*.log
+*.vcd
+*.vcd.*
+
+# ---- Simulation binaries ----
+sim
+simv
+*.exe
+
+# ---- Editor/IDE files ----
+*.swp
+*.swo
+*.bak
+*~
+.vscode/
+.idea/
+*.DS_Store
+
+# ---- Git & OS cruft ----
+*.orig
+*.rej
+*.tmp
+*.out
+
+# ---- Bluespec garbage ----
+bsc.dir/
+*.bo
+*.ba
+*.bi
+*.bf
+*.ba.debug
