@@ -58,8 +58,23 @@ package SpeculaCore;
 
       let val1 = rf.sub(d.rs1);
       let val2 = rf.sub(d.rs2);
+
+      Word result = 0;
+
+      if(d.opcode == 7'b0010011)
+        begin
+          result = val1 + signExtend(inst[31:20]);
+        end
+      else if(d.opcode == 7'b0110011)
+        begin
+          result = val1 + val2;
+        end
+         
+      if(d.rd != 0)
+        rf.upd(d.rd, result);
+
       $display("[Specula] PC: %0d Instr: %h", pc, inst);
-      $display("  opcode: %b rd: %0d rs1: %0d val1: %0d rs2: %0d val2: %0d", d.opcode, d.rd, d.rs1, val1, d.rs2, val2);
+      $display("  opcode: %b rd: %0d rs1: %0d val1: %0d rs2: %0d val2: %0d -> result: %0d", d.opcode, d.rd, d.rs1, val1, d.rs2, val2, result);
       $fflush(stdout);
 
       pc <= pc + 4; 
