@@ -30,22 +30,43 @@ package SpeculaCore;
   function Decoded decode(Instruction i);
     Decoded d;
     d.opcode = i[6:0];
-    d.rd = i[11:7];
-    d.rs1 = i[19:15];
-    d.rs2 = i[24:20];
+    d.rd = unpack(i[11:7]);
+    d.rs1 = unpack(i[19:15]);
+    d.rs2 = unpack(i[24:20]);
     return d;
   endfunction
 
   module mkSpeculaCore(Empty);
+    Reg#(Bit#(2)) initState <- mkReg(0);
     Reg#(Bit#(32)) pc <- mkReg(0);
-    
+    RegFile#(RegIndex, Word) rf <- mkRegFileFull;
+
+    rule init1(initState == 0);
+      rf.upd(1, 10); // x1 = 10 
+      initState <= 1;
+    endrule
+
+    rule init2(initState == 0);
+      rf.upd(2, 20); // x2 = 20
+      initState <= 2;
+    endrule
+
+
     rule fetch_and_decode;
       Instruction inst = getInstruction(pc);
       Decoded d = decode(inst);
-      $display("[Specula] PC: %0d Instr: %h | opcode: %b rd: %0d rs1: %0d rs2: %0d", pc, inst, d.opcode, d.rd, d.rs1, d.rs2);
+
+      let val1 = rf.sub(d.rs1);
+      let val2 = rf.sub(d.rs2);
+      $display("[Specula] PC: %0d Instr: %h", pc, inst);
+      $display("  opcode: %b rd: %0d rs1: %0d val1: %0d rs2: %0d val2: %0d", d.opcode, d.rd, d.rs1, val1, d.rs2, val2);
+      $fflush(stdout);
+
       pc <= pc + 4; 
+      if (pc >= 12) 
+        $finish;
     endrule
+  
   endmodule
 
 endpackage
-
