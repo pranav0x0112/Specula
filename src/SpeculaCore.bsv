@@ -15,6 +15,8 @@ package SpeculaCore;
     RegIndex rd;
     RegIndex rs1;
     RegIndex rs2;
+    Bit#(32) imm;
+    Instruction raw;
   } Decoded deriving (Bits, FShow);
 
   function Bit#(32) getInstruction(Bit#(32) pc);
@@ -33,55 +35,106 @@ package SpeculaCore;
     d.rd = unpack(i[11:7]);
     d.rs1 = unpack(i[19:15]);
     d.rs2 = unpack(i[24:20]);
+    d.imm = signExtend(i[31:20]);
+    d.raw = i;
     return d;
   endfunction
 
+  module mkSimpleRAM(RegFile#(Bit#(32), Bit#(32)));
+    RegFile#(Bit#(32), Bit#(32)) mem <- mkRegFileFull;
+    return mem;
+  endmodule
+
   module mkSpeculaCore(Empty);
-    Reg#(Bit#(2)) initState <- mkReg(0);
     Reg#(Bit#(32)) pc <- mkReg(0);
+    Reg#(Bit#(2)) initState <- mkReg(0);
     RegFile#(RegIndex, Word) rf <- mkRegFileFull;
+    RegFile#(Bit#(32), Bit#(32)) ram <- mkSimpleRAM;
+
+    Reg#(Instruction) if_id_instr <- mkReg(0);
+    Reg#(Decoded) id_ex_decoded <- mkReg(?);
+    Reg#(Tuple2#(Word, RegIndex)) ex_wb_result <- mkReg(?);
+    Reg#(Tuple3#(Bit#(32), RegIndex, Bool)) mem_wb <- mkReg(?);
+    Reg#(Tuple4#(Bit#(32), RegIndex, Bool, Bit#(32))) ex_mem <- mkReg(?);
 
     rule init1(initState == 0);
       rf.upd(1, 10); // x1 = 10 
       initState <= 1;
     endrule
 
-    rule init2(initState == 0);
+    rule init2(initState == 1);
       rf.upd(2, 20); // x2 = 20
       initState <= 2;
     endrule
 
+    // === Instruction Fetch ===
+    rule stage_IF(initState == 2);
+      Instruction instr = getInstruction(pc);
+      if_id_instr <= instr;
+      $display("[IF] pc = %0d", pc);
 
-    rule fetch_and_decode;
-      Instruction inst = getInstruction(pc);
-      Decoded d = decode(inst);
+      if(pc >= 12)
+        $finish;
+      pc <= pc + 4;
+      
+    endrule
 
+    // === Instruction Decode ===
+    rule stage_ID;
+      Decoded d = decode(if_id_instr);
+      id_ex_decoded <= d;
+    endrule
+
+    // === Execute ===
+    rule stage_EX;
+      let d = id_ex_decoded;
       let val1 = rf.sub(d.rs1);
       let val2 = rf.sub(d.rs2);
-
       Word result = 0;
+      Bool isLoad = False;
+      Bit#(32) storeVal = 0;
 
-      if(d.opcode == 7'b0010011)
-        begin
-          result = val1 + signExtend(inst[31:20]);
-        end
-      else if(d.opcode == 7'b0110011)
-        begin
-          result = val1 + val2;
-        end
-         
-      if(d.rd != 0)
-        rf.upd(d.rd, result);
+      if (d.opcode == 7'b0010011)
+        result = val1 + d.imm; // addi
+      else if (d.opcode == 7'b0110011)
+        result = val1 + val2; // add
+      else if (d.opcode == 7'b0000011) begin 
+        result = val1 + d.imm; // address for load (lw)
+        isLoad = True;
+      end
+      else if (d.opcode == 7'b0100011) begin
+        result = val1 + d.imm; // address for store (sw)
+        storeVal = val2;
+      end
 
-      $display("[Specula] PC: %0d Instr: %h", pc, inst);
-      $display("  opcode: %b rd: %0d rs1: %0d val1: %0d rs2: %0d val2: %0d -> result: %0d", d.opcode, d.rd, d.rs1, val1, d.rs2, val2, result);
-      $fflush(stdout);
+      ex_mem <= tuple4(result, d.rd, isLoad, storeVal);
+      
+      $display("[EX] Instr: %h", d.raw);
+      $display("     opcode: %b rd: %0d rs1: %0d val1: %0d rs2: %0d val2: %0d -> result: %0d", d.opcode, d.rd, d.rs1, val1, d.rs2, val2, result);
+    endrule
 
-      pc <= pc + 4; 
-      if (pc >= 12) 
+    // === Memory Access ===
+    rule stage_MEM;
+      let { addr, rd, isLoad, storeVal } = ex_mem;
+
+      if(isLoad) begin
+        let loadVal = ram.sub(addr);
+        mem_wb <= tuple3(loadVal, rd, True);
+      end else begin
+        ram.upd(addr, storeVal);
+        mem_wb <= tuple3(0, rd, False);
+      end
+    endrule
+
+    // === Write Back ===
+    rule stage_WB;
+      let { val, rd, isLoad } = mem_wb;
+      if (rd != 0 && isLoad)
+        rf.upd(rd, val);
+
+      if (pc >= 12)
         $finish;
     endrule
-  
-  endmodule
 
+  endmodule
 endpackage
