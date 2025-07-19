@@ -2,23 +2,26 @@
 
 Out-of-order (OoO) execution allows a CPU to execute instructions as soon as their operands are available, rather than waiting for all previous instructions to complete. This increases parallelism and improves performance, especially in workloads with instruction-level parallelism (ILP).
 
----
-
 ## Motivation for OoO
 
-- In-order execution can result in pipeline stalls when an instruction with a long latency (like a load from memory) blocks following instructions.
+- In-order pipelines stall frequently due to data dependencies and long-latency operations (e.g., memory loads).
     
-- OoO allows subsequent independent instructions to execute as soon as their data dependencies are resolved, improving utilization of functional units and boosting throughput.
+- OoO execution decouples instruction _fetch/decode_ from _execute/commit_, allowing the backend to exploit available execution units more efficiently.
+    
+- Key idea: **Don't wait unnecessarily** — execute when inputs are ready.
     
 
 ### Simple Example:
-```asm
+
+```
 1:   LW  x1, 0(x2)     ; Load, might take several cycles
 2:   ADD x3, x4, x5    ; Independent, can be executed immediately
 ```
 
-- With **in-order**: `ADD` is stalled until `LW` completes.
-- With **OoO**: `ADD` executes immediately after decode, provided its operands are ready.
+- **In-order pipeline**: `ADD` stalls behind `LW`.
+    
+- **OoO core**: `ADD` proceeds if x4 and x5 are ready, while `LW` still loads.
+    
 
 ---
 
@@ -26,56 +29,67 @@ Out-of-order (OoO) execution allows a CPU to execute instructions as soon as the
 
 |Component|Role|
 |---|---|
-|**Register Renaming**|Eliminates WAR/WAW hazards by mapping logical to physical registers|
-|**Reservation Stations (RS)**|Hold instructions waiting for operands; issue when ready|
-|**Reorder Buffer (ROB)**|Maintains program order for in-order commit; handles exceptions|
-|**Physical Register File (PRF)**|Stores values of all physical registers|
-|**Issue Logic**|Detects ready instructions (wakeup) and selects among them (select)|
-|**Commit Unit**|Commits completed instructions in order, ensuring architectural state|
+|**Register Renaming**|Maps logical to physical registers; avoids WAR/WAW hazards|
+|**Reservation Stations**|Buffers instructions until operands are ready|
+|**Reorder Buffer (ROB)**|Tracks instructions in program order; enables in-order commit|
+|**Physical Register File**|Stores actual register values, decoupled from architectural names|
+|**Issue Logic**|Detects ready ops (wakeup) and chooses among them (select)|
+|**Commit Unit**|Commits instructions in program order, updates architectural state|
 
-These components decouple the execution phase from the program order, allowing multiple instructions to be in-flight and executed in parallel.
-
----
-
-## High-Level Instruction Lifecycle
-
-1. **Fetch** – Fetch instructions using the PC
-    
-2. **Decode** – Decode opcode and operand fields
-    
-3. **Register Rename** – Assign new physical registers, update rename table
-    
-4. **Dispatch** – Allocate ROB entry, send to RS, track operands
-    
-5. **Issue (Wakeup + Select)** – Issue instruction when all operands are ready
-    
-6. **Execute** – Perform the operation in ALU/mult/div/FU
-    
-7. **Writeback** – Write result to PRF, broadcast tag to RS
-    
-8. **Commit** – Commit result in order using ROB; free resources
-    
+These components let the backend operate out-of-order while presenting a precise, in-order frontend to the programmer.
 
 ---
 
-## Hazards and OoO Mitigation Techniques
+## High-Level Instruction Lifecycle (8 Stages)
+
+1. **Fetch** – Get instruction from memory into the fetch queue
+    
+2. **Decode** – Extract opcode and source/dest registers
+    
+3. **Rename** – Allocate new physical registers for dests, update rename table
+    
+4. **Dispatch** – Allocate ROB entry; send instruction and operand tags to RS
+    
+5. **Issue (Wakeup + Select)** – When all operands are ready, issue to FU
+    
+6. **Execute** – Functional unit performs operation
+    
+7. **Writeback** – FU broadcasts result tag; update PRF + wakeup dependent RS
+    
+8. **Commit** – ROB commits instructions in-order, freeing resources
+    
+
+---
+
+## Hazards in Pipelined Execution
 
 |   |   |   |
 |---|---|---|
-|Hazard Type|Description|Mitigation|
-|RAW|Read After Write (true dependency)|Wait via RS and wakeup logic|
+|Hazard Type|Description|OoO Mitigation|
+|RAW|Read After Write (true dependency)|Stall until data is ready (RS wait)|
 |WAR|Write After Read (false dependency)|Eliminated via register renaming|
 |WAW|Write After Write (false dependency)|Eliminated via register renaming|
-|Control|Branches/mispredictions|Speculative execution + flush logic|
+|Control|Uncertainty due to branches|Speculative execution + branch predictor + flush logic|
 
 ---
 
-## Additional Notes
+## Precise Exceptions & State Recovery
 
-- All instructions must **commit in program order** to maintain precise exceptions.
+- To maintain **precise exceptions**, instructions must **commit in-order**.
     
-- ROB is the key to ensuring precise state even with out-of-order execution.
+- ROB ensures correct state: instructions are only committed after completion and validity.
     
-- Branch misprediction recovery requires flushing ROB and clearing invalid instructions.
+- On branch misprediction or exception, all younger instructions in the ROB are flushed.
     
-- The number of in-flight instructions is limited by sizes of ROB, RS, and PRF.
+- Physical registers are reference-counted or freelisted to support rollback.
+    
+
+---
+
+## Scalability and Limits
+
+- Number of in-flight instructions limited by ROB entries, RS capacity, and physical register count.
+    
+- Aggressive OoO cores (e.g., BOOM, Cortex-A76) use large ROBs (128+ entries), wide issue (2–6), and deep RS banks.
+    
+- Power and complexity grow with window size — hence "lightweight" OoO cores compromise.
