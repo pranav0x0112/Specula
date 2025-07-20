@@ -1,4 +1,4 @@
-package SpeculaCore;
+package InOrderCore;
 
   import Vector::*;
   import RegFile::*;
@@ -75,7 +75,7 @@ package SpeculaCore;
     return mem;
   endmodule
 
-  module mkSpeculaCore(Empty);
+  module mkInOrderCore(Empty);
     Reg#(Bit#(32)) pc <- mkReg(0);
     Reg#(Bit#(3)) initState <- mkReg(0);
     RegFile#(RegIndex, Word) rf <- mkRegFileFull;
