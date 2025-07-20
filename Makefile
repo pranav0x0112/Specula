@@ -5,7 +5,7 @@ SRC_DIR  ?= src
 OUT_DIR  ?= build
 EXE      ?= sim
 
-BSC_FLAGS := -sim -p +:src
+BSC_FLAGS := -sim -p +:src:src/frontend:src/backend
 
 # ---------- TARGETS -----------
 
