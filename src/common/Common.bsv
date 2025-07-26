@@ -2,7 +2,8 @@ package Common;
 
   typedef Bit#(5) RegIndex;
   typedef Bit#(32) Instruction;
-
+  typedef Bit#(32) Data;
+  typedef Maybe#(ROBTag) RATEntry;
   typedef enum {
     OP_IMM, OP, LUI, AUIPC, JAL, JALR, BRANCH, LOAD, STORE, MISC_MEM, SYSTEM, INVALID
   } Opcode deriving (Bits, Eq, FShow);
@@ -42,5 +43,9 @@ package Common;
       extended = {20'h00000, imm12};
     return extended;
   endfunction
+
+  typedef struct {
+    UInt#(6) idx;
+  } ROBTag deriving (Bits, FShow);
 
 endpackage
