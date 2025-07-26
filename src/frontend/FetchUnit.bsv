@@ -1,6 +1,7 @@
 package FetchUnit;
 
   import Common::*;
+  import RegFile::*;
 
   interface IfcFetchUnit;
     method Action start(Bit#(32) pc);
@@ -13,6 +14,13 @@ package FetchUnit;
     Reg#(Bool) started <- mkReg(False);
 
     let maxPC = 32'h00000100;
+
+    RegFile#(Bit#(32), Instruction) imem <- mkRegFileFull();
+
+    rule preload;
+      imem.upd(0, 32'h00508193);
+      noAction;
+    endrule
 
     rule doFetch(started && pcReg < maxPC);
       instr <= getInstruction(pcReg);
