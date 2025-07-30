@@ -16,6 +16,10 @@ package Common;
     Bit#(32) imm;
   } Decoded deriving (Bits, FShow);
 
+  typedef 6 LogNumPhysRegs;
+  typedef 32 NUM_PHYS_REGS;
+  typedef Bit#(LogNumPhysRegs) PhysRegTag;
+
   function Instruction getInstruction(Bit#(32) pc);
     case(pc)
       32'h00008398: return 32'h00108093; // addi x1, x1, 1
