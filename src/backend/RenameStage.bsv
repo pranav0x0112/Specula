@@ -4,16 +4,19 @@ import Common::*;
 import ROB::*;
 import RAT::*;
 import Vector::*;
+import FreeList::*;
 
 interface RenameStage_IFC;
   method Action start(Decoded d);
   method Decoded getRenamed();
+  method Action testFreeListAlloc();
 endinterface
 
 module mkRenameStage(RenameStage_IFC);
 
   ROB_IFC rob <- mkROB();
   RAT_IFC rat <- mkRAT();
+  FreeList_IFC freelist <- mkFreeList();
 
   Decoded testInstr = Decoded {
     opcode: OP_IMM,
@@ -33,6 +36,10 @@ module mkRenameStage(RenameStage_IFC);
     let rs2_tag = rat.lookup(instr.rs2);
 
     let robTag <- rob.allocate(tagged Valid instr.rd);
+
+    let maybeTag <- freelist.tryAllocate();
+    $display("[FreeList] Allocated tag: %s", fshow(maybeTag));
+
     rat.rename(instr.rd, robTag);
 
     $display("[RENAME]");
@@ -44,13 +51,18 @@ module mkRenameStage(RenameStage_IFC);
     did <= True;
   endrule
 
-    method Action start(Decoded d);
+  method Action start(Decoded d);
     renamedInstr <= d;
     did <= False;
   endmethod
 
   method Decoded getRenamed();
     return renamedInstr;
+  endmethod
+
+  method Action testFreeListAlloc();
+    let maybeTag <- freelist.tryAllocate();
+    $display("[FreeList Test] Allocated tag: %s", fshow(maybeTag));
   endmethod
 
 endmodule

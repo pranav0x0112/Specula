@@ -5,12 +5,16 @@ package SpeculaCore;
   import Common::*;
   import Dispatch::*;
   import RenameStage::*;
+  import PRF::*;
+  import FreeList::*;
 
   module mkSpeculaCore(Empty);
     IfcFetchUnit fetch <- mkFetchUnit;
     IfcDecodeUnit decode <- mkDecodeUnit;
     IfcDispatch dispatch <- mkDispatch;
     RenameStage_IFC rename <- mkRenameStage;
+    PRF prf <- mkPRF;
+    FreeList_IFC freelist <- mkFreeList; 
     
     let maxPC = 32'h00000100;
 
@@ -46,6 +50,23 @@ package SpeculaCore;
       rename.start(d);
       decodeStarted <= False;
       renameDone <= True;
+    endrule
+
+    rule testPRF (pc == 0);
+      prf.write(PhysRegTag'(5), 32'hDEADBEEF);
+      prf.markReady(PhysRegTag'(5));
+      let val = prf.read(PhysRegTag'(5));
+
+      if (val matches tagged Valid .v) begin
+        $display("[PRF Test] PRF[5] = %x", v);
+      end else begin
+        $display("[PRF Test] PRF[5] = BAD");
+      end
+    endrule
+
+    rule testFreeList (pc == 0);
+      let maybeTag <- freelist.tryAllocate();
+      $display("[FreeList Test] Allocated tag: %s", fshow(maybeTag));
     endrule
 
     rule haltPC(pc >= maxPC && !halted);
