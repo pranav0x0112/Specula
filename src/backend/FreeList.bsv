@@ -5,11 +5,19 @@ package FreeList;
 
   interface FreeList_IFC;
     method ActionValue#(Maybe#(PhysRegTag)) tryAllocate();
+    method Action free(PhysRegTag tag);
+    method Bool hasFree();
   endinterface
 
   module mkFreeList(FreeList_IFC);
+
     Vector#(NUM_PHYS_REGS, Reg#(Bool)) freelist <- replicateM(mkReg(True));
     
+    function Bool orFn(Bool a, Bool b);
+      return a || b;
+    endfunction
+
+
     method ActionValue#(Maybe#(PhysRegTag)) tryAllocate();
       Maybe#(PhysRegTag) result = tagged Invalid;
       Bool allocated = False;
@@ -26,5 +34,14 @@ package FreeList;
       return result;
     endmethod
 
+    method Action free(PhysRegTag tag);
+      freelist[tag] <= True;
+    endmethod
+
+    method Bool hasFree();
+      return foldl(orFn, False, readVReg(freelist));
+    endmethod
+
   endmodule
+
 endpackage
