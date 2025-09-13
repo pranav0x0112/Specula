@@ -4,6 +4,7 @@ package Common;
   typedef Bit#(32) Instruction;
   typedef Bit#(32) Data;
   typedef Maybe#(ROBTag) RATEntry;
+
   typedef enum {
     OP_IMM, OP, LUI, AUIPC, JAL, JALR, BRANCH, LOAD, STORE, MISC_MEM, SYSTEM, INVALID
   } Opcode deriving (Bits, Eq, FShow);
@@ -19,6 +20,11 @@ package Common;
   typedef 6 LogNumPhysRegs;
   typedef 32 NUM_PHYS_REGS;
   typedef Bit#(LogNumPhysRegs) PhysRegTag;
+
+  typedef PhysRegTag ZERO_TAG;
+  function ZERO_TAG zeroTag();
+    return 0;
+  endfunction
 
   function Instruction getInstruction(Bit#(32) pc);
     case(pc)
@@ -51,5 +57,26 @@ package Common;
   typedef struct {
     UInt#(6) idx;
   } ROBTag deriving (Bits, FShow);
+
+  typedef enum {
+    ALU_ADD, ALU_SUB, ALU_AND, ALU_OR
+  } ALUOp deriving (Bits, Eq, FShow);
+
+  typedef struct {
+    ALUOp op;
+    PhysRegTag src1;
+    PhysRegTag src2;
+    PhysRegTag dest;
+  } ALUInstr deriving (Bits, FShow);
+
+  typedef struct {
+    ALUOp op;
+    PhysRegTag src1;
+    Bool src1Ready;
+    PhysRegTag src2;
+    Bool src2Ready;
+    PhysRegTag dest;
+    ROBTag robTag;
+  } RSEntry deriving (Bits, FShow);
 
 endpackage
