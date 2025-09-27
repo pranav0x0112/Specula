@@ -17,6 +17,16 @@ package Common;
     Bit#(32) imm;
   } Decoded deriving (Bits, FShow);
 
+  typedef struct {
+    Decoded instr;
+    PhysRegTag src1Tag;
+    Bool src1Ready;
+    PhysRegTag src2Tag;
+    Bool src2Ready;
+    PhysRegTag destTag;
+    ROBTag robTag;
+  } RenamedInstr deriving (Bits, FShow);
+
   typedef 6 LogNumPhysRegs;
   typedef 32 NUM_PHYS_REGS;
   typedef Bit#(LogNumPhysRegs) PhysRegTag;
@@ -75,6 +85,8 @@ package Common;
     Bool src1Ready;
     PhysRegTag src2;
     Bool src2Ready;
+    Bit#(32) immediate;  
+    Bool useImmediate;   
     PhysRegTag dest;
     ROBTag robTag;
   } RSEntry deriving (Bits, FShow);
