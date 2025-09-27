@@ -29,7 +29,7 @@ package ALU;
     FIFOF#(ALUReq) reqQ <- mkFIFOF();
     FIFOF#(ALUResp) respQ <- mkFIFOF();
 
-    rule do_execute(!respQ.full && !reqQ.empty);
+    rule do_execute(respQ.notFull && reqQ.notEmpty);
       let r = reqQ.first; reqQ.deq;
 
       Data res = 32'd0;
@@ -52,8 +52,8 @@ package ALU;
 
     endrule
 
-    method Bool notFull() = !reqQ.full;
-    method Bool notEmpty() = !respQ.empty;
+    method Bool notFull() = reqQ.notFull;
+    method Bool notEmpty() = respQ.notEmpty;
 
     method Action enq(ALUReq r);
       reqQ.enq(r);

@@ -9,7 +9,7 @@ package RenameStage;
 
   interface RenameStage_IFC;
     method Action start(Decoded d);
-    method Decoded getRenamed();
+    method RenamedInstr getRenamed();
     method Action testFreeListAlloc();
   endinterface
 
@@ -29,6 +29,7 @@ package RenameStage;
     };
 
     Reg#(Decoded) renamedInstr <- mkReg(testInstr);
+    Reg#(RenamedInstr) finalRenamed <- mkReg(?);
     Reg#(Bool)    did          <- mkReg(False);
 
     rule do_rename (!did);
@@ -36,12 +37,29 @@ package RenameStage;
 
       let rs1_tag = rat.lookup(instr.rs1);
       let rs2_tag = rat.lookup(instr.rs2);
-      let robTag <- rob.allocate(tagged Valid instr.rd);
       let maybeDest <- freelist.tryAllocate();
+      let robTag <- rob.allocate(tagged Valid instr.rd, maybeDest);
 
       if (maybeDest matches tagged Valid .pDst) begin
 
         rat.rename(instr.rd, robTag);
+
+        PhysRegTag src1PhysTag = extend(instr.rs1);  // Convert 5-bit RegIndex to 6-bit PhysRegTag
+        PhysRegTag src2PhysTag = extend(instr.rs2);  // Convert 5-bit RegIndex to 6-bit PhysRegTag
+        Bool src1Ready = True;  
+        Bool src2Ready = True;  
+
+        RenamedInstr renamed = RenamedInstr {
+          instr: instr,
+          src1Tag: src1PhysTag,
+          src1Ready: src1Ready,
+          src2Tag: src2PhysTag,
+          src2Ready: src2Ready,
+          destTag: pDst,
+          robTag: robTag
+        };
+
+        finalRenamed <= renamed;
 
         $display("[RENAME]");
         $display("  instr: rd=x%0d, rs1=x%0d, rs2=x%0d, imm=%0d",
@@ -63,8 +81,8 @@ package RenameStage;
       did          <= False;
     endmethod
 
-    method Decoded getRenamed();
-      return renamedInstr;
+    method RenamedInstr getRenamed();
+      return finalRenamed;
     endmethod
 
     method Action testFreeListAlloc();
