@@ -8,6 +8,8 @@ package SpeculaCore;
   import PRF::*;
   import FreeList::*;
   import ReservationStation::*;
+  import ROB::*;
+  import ALU::*;
 
   module mkSpeculaCore(Empty);
     IfcFetchUnit fetch <- mkFetchUnit;
@@ -17,6 +19,8 @@ package SpeculaCore;
     PRF prf <- mkPRF;
     FreeList_IFC freelist <- mkFreeList; 
     ReservationStationIfc rs <- mkReservationStation;
+    ROB_IFC rob <- mkROB;
+    ALU_IFC alu <- mkALU;
     
     let maxPC = 32'h00000100;
 
@@ -39,12 +43,39 @@ package SpeculaCore;
       $display("[Specula] instr: %h | rs1: %0d rs2: %0d rd: %0d", instr, d.rs1, d.rs2, d.rd);
     endrule
 
-    rule doDispatch (!decodeStarted && !halted && renameDone);
-      let r = rename.getRenamed();
-      dispatch.start(r);
-      pc <= pc + 4;
-      fetchStarted <= False;
-      renameDone <= False;
+    rule doDispatch (renameDone);
+      $display("[DEBUG] doDispatch rule firing! renameDone=%b", renameDone);
+      
+      if (rs.notFull) begin
+        let r = rename.getRenamed();
+
+        let maybeDestTag <- freelist.tryAllocate();
+        
+        if (maybeDestTag matches tagged Valid .destTag) begin
+          let robTag <- rob.allocate(tagged Valid r.instr.rd, tagged Valid destTag);
+
+          let rsEntry = RSEntry {
+            op: ALU_ADD,
+            src1: PhysRegTag'(zeroExtend(r.instr.rs1)),
+            src1Ready: True,
+            src2: PhysRegTag'(zeroExtend(r.instr.rs2)),
+            src2Ready: True,
+            dest: destTag,
+            robTag: robTag,
+            immediate: r.instr.imm,
+            useImmediate: (r.instr.opcode == OP_IMM)
+          };
+          
+          rs.enq(rsEntry);
+          $display("[DISPATCH] Sent to RS: dest=p%0d rob=%0d", destTag, robTag.idx);
+
+          renameDone <= False;
+        end else begin
+          $display("[DISPATCH] No free physical registers - stalling");
+        end
+      end else begin
+        $display("[DISPATCH] RS is full - stalling");
+      end
     endrule
 
     rule doRename (decodeStarted && !halted);
@@ -54,50 +85,55 @@ package SpeculaCore;
       renameDone <= True;
     endrule
 
-    rule testPRF (pc == 0);
-      prf.write(PhysRegTag'(5), 32'hDEADBEEF);
-      prf.markReady(PhysRegTag'(5));
-      let val = prf.read(PhysRegTag'(5));
-
-      if (val matches tagged Valid .v) begin
-        $display("[PRF Test] PRF[5] = %x", v);
-      end else begin
-        $display("[PRF Test] PRF[5] = BAD");
-      end
-    endrule
-
-    rule testRS (pc == 0);
-      RSEntry e = RSEntry {
-        op: ALU_ADD,
-        src1: PhysRegTag'(1),
-        src1Ready: True,
-        src2: PhysRegTag'(2),
-        src2Ready: True,
-        dest: PhysRegTag'(3),
-        robTag: ROBTag { idx: 0 } 
-      };
-
-      rs.enq(e);
-      $display("[Specula] Enqueued RSEntry: dest=%0d src1=%0d src2=%0d", e.dest, e.src1, e.src2);
-    endrule
-
-    rule testRS_deq(pc == 4);
-      if(rs.notEmpty) begin
-        let e <- rs.deq();
-        $display("[Specula] Dequeued RSEntry: dest=%0d src1=%0d src2=%0d", e.dest, e.src1, e.src2);
-      end else begin
-        $display("[Specula] Reservation Station is empty, cannot dequeue");
-      end
-    endrule
-
-    rule testFreeList (pc == 0);
-      let maybeTag <- freelist.tryAllocate();
-      $display("[FreeList Test] Allocated tag: %s", fshow(maybeTag));
-    endrule
-
     rule haltPC(pc >= maxPC && !halted);
       $display("[Specula] Halting at PC: %h", pc);
       halted <= True;
+    endrule
+
+    rule doCommit;
+      let maybeHead = rob.peekHead();
+      if (maybeHead matches tagged Valid .headInfo) begin
+        match {.tag, .entry} = headInfo;
+        if (entry.completed) begin
+          rob.commitHead(freelist);
+        end
+      end
+    endrule
+
+    rule doExecute (rs.notEmpty && alu.notFull);
+      $display("[DEBUG] doExecute rule firing: rs.notEmpty=%b alu.notFull=%b", rs.notEmpty, alu.notFull);
+      let rsEntry <- rs.deq();
+      $display("[Execute] Dequeued RS entry: op=%0d dest=p%0d rob=%0d", rsEntry.op, rsEntry.dest, rsEntry.robTag.idx);
+
+      let src1Val = prf.read(rsEntry.src1);
+      let src2Val = prf.read(rsEntry.src2);
+      
+      let aVal = (src1Val matches tagged Valid .v ? v : 32'h0);
+      let bVal = rsEntry.useImmediate ? rsEntry.immediate : (src2Val matches tagged Valid .v ? v : 32'h0);
+
+      ALUReq aluReq = ALUReq {
+        op: rsEntry.op,
+        a: aVal,
+        b: bVal,  
+        dest: rsEntry.dest,
+        robTag: rsEntry.robTag
+      };
+      
+      alu.enq(aluReq);
+      $display("[Execute] Sent to ALU: op=%0d a=%0d b=%0d dest=p%0d rob=%0d (useImm=%0d)", rsEntry.op, aVal, bVal, rsEntry.dest, rsEntry.robTag.idx, rsEntry.useImmediate);
+    endrule
+
+    rule doWriteback (alu.notEmpty);
+      let aluResp <- alu.deq();
+      $display("[Writeback] ALU result: res=%0d dest=p%0d rob=%0d", aluResp.result, aluResp.dest, aluResp.robTag.idx);
+
+      rob.writeResultAndComplete(aluResp.robTag, aluResp.result);
+
+      prf.write(aluResp.dest, aluResp.result);
+      prf.markReady(aluResp.dest);
+      
+      $display("[Writeback] ROB[%0d] completed with result=%0d, PRF[p%0d] = %0d", 
+               aluResp.robTag.idx, aluResp.result, aluResp.dest, aluResp.result);
     endrule
 
   endmodule
