@@ -3,6 +3,12 @@ package ALU;
   import Common::*;
   import FIFOF::*;
 
+  function Bit#(32) signedShiftRight(Bit#(32) val, Bit#(5) shamt);
+    Int#(32) signedVal = unpack(val);
+    Int#(32) shifted = signedVal >> shamt;
+    return pack(shifted);
+  endfunction
+
   typedef struct {
     ALUOp op;
     Data a;
@@ -38,6 +44,15 @@ package ALU;
         ALU_SUB: res = r.a - r.b;
         ALU_AND: res = r.a & r.b;
         ALU_OR: res = r.a | r.b;
+        ALU_XOR: res = r.a ^ r.b;
+        ALU_SLL: res = r.a << r.b[4:0];
+        ALU_SRL: res = r.a >> r.b[4:0];
+        ALU_SRA: res = signedShiftRight(r.a, r.b[4:0]);
+        ALU_ADDI: res = r.a + r.b;  
+        ALU_ANDI: res = r.a & r.b;  
+        ALU_ORI: res = r.a | r.b;   
+        ALU_XORI: res = r.a ^ r.b;  
+        ALU_SLLI: res = r.a << r.b[4:0];  
         default: res = 32'd0;
       endcase
 
