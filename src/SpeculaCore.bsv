@@ -49,30 +49,21 @@ package SpeculaCore;
       if (rs.notFull) begin
         let r = rename.getRenamed();
 
-        let maybeDestTag <- freelist.tryAllocate();
+        let rsEntry = RSEntry {
+          op: getALUOp(r.instr),  
+          src1: r.src1Tag,       
+          src1Ready: r.src1Ready,
+          src2: r.src2Tag,        
+          src2Ready: r.src2Ready, 
+          dest: r.destTag,        
+          robTag: r.robTag,       
+          immediate: r.instr.imm,
+          useImmediate: (r.instr.opcode == OP_IMM)
+        };
         
-        if (maybeDestTag matches tagged Valid .destTag) begin
-          let robTag <- rob.allocate(tagged Valid r.instr.rd, tagged Valid destTag);
-
-          let rsEntry = RSEntry {
-            op: ALU_ADD,
-            src1: PhysRegTag'(zeroExtend(r.instr.rs1)),
-            src1Ready: True,
-            src2: PhysRegTag'(zeroExtend(r.instr.rs2)),
-            src2Ready: True,
-            dest: destTag,
-            robTag: robTag,
-            immediate: r.instr.imm,
-            useImmediate: (r.instr.opcode == OP_IMM)
-          };
-          
-          rs.enq(rsEntry);
-          $display("[DISPATCH] Sent to RS: dest=p%0d rob=%0d", destTag, robTag.idx);
-
-          renameDone <= False;
-        end else begin
-          $display("[DISPATCH] No free physical registers - stalling");
-        end
+        rs.enq(rsEntry);
+        $display("[DISPATCH] Sent to RS: dest=p%0d rob=%0d", r.destTag, r.robTag.idx);
+        renameDone <= False;
       end else begin
         $display("[DISPATCH] RS is full - stalling");
       end
@@ -95,6 +86,10 @@ package SpeculaCore;
       if (maybeHead matches tagged Valid .headInfo) begin
         match {.tag, .entry} = headInfo;
         if (entry.completed) begin
+          if (entry.dst matches tagged Valid .dstReg) begin
+            rename.clearRAT(dstReg);
+            $display("[COMMIT] Clearing RAT entry for x%0d", dstReg);
+          end
           rob.commitHead(freelist);
         end
       end
@@ -131,6 +126,9 @@ package SpeculaCore;
 
       prf.write(aluResp.dest, aluResp.result);
       prf.markReady(aluResp.dest);
+
+      rs.wakeup(aluResp.dest);
+      $display("[Writeback] Waking up instructions waiting for p%0d", aluResp.dest);
       
       $display("[Writeback] ROB[%0d] completed with result=%0d, PRF[p%0d] = %0d", 
                aluResp.robTag.idx, aluResp.result, aluResp.dest, aluResp.result);
