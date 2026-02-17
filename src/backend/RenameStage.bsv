@@ -16,35 +16,25 @@ package RenameStage;
 
   module mkRenameStage(RenameStage_IFC);
 
-    ROB_IFC       rob      <- mkROB();
-    RAT_IFC       rat      <- mkRAT();
-    FreeList_IFC  freelist <- mkFreeList();
-    PRF           prf      <- mkPRF();
-
-    Decoded testInstr = Decoded {
-      opcode: OP_IMM,
-      rd: 3,
-      rs1: 1,
+    Decoded initInstr = Decoded {
+      opcode: ALU_ADD,
+      rd: 0,
+      rs1: 0,
       rs2: 0,
-      funct3: 3'b000,
-      funct7: 7'b0000000,
-      imm: 5,
-      raw: 32'h00500113
+      imm: 0
     };
 
-    Reg#(Decoded) renamedInstr <- mkReg(testInstr);
-    Reg#(RenamedInstr) finalRenamed <- mkReg(?);
-    Reg#(Bool)    did          <- mkReg(False);
+    RenamedInstr initRenamed = RenamedInstr {
+      instr: initInstr,
+      src1Tag: 0,
+      src1Ready: True,
+      src2Tag: 0,
+      src2Ready: True,
+      destTag: 0,
+      robTag: ROBTag{idx: 0}
+    };
 
-    rule do_rename (!did);
-      let instr = renamedInstr;
-
-      let rs1_tag = rat.lookup(instr.rs1);
-      let rs2_tag = rat.lookup(instr.rs2);
-      let maybeDest <- freelist.tryAllocate();
-      let robTag <- rob.allocate(tagged Valid instr.rd, maybeDest);
-
-      if (maybeDest matches tagged Valid .pDst) begin
+    Reg#(RenamedInstr) renamedInstr <- mkReg(initRenamed);
 
         rat.rename(instr.rd, robTag);
 
@@ -94,19 +84,29 @@ package RenameStage;
         $display("[RENAME] Stall: FreeList empty, cannot allocate dest phys-reg");
       end
     endrule
+>>>>>>> main
 
     method Action start(Decoded d);
-      renamedInstr <= d;
-      did          <= False;
+      RenamedInstr renamed = RenamedInstr {
+        instr: d,
+        src1Tag: 0,
+        src1Ready: True,
+        src2Tag: 0,
+        src2Ready: True,
+        destTag: 0,
+        robTag: ROBTag{idx: 0}
+      };
+      renamedInstr <= renamed;
+      $display("[RENAME] Stored decoded instr: opcode=%0d rd=x%0d rs1=x%0d rs2=x%0d imm=%h",
+               d.opcode, d.rd, d.rs1, d.rs2, d.imm);
     endmethod
 
     method RenamedInstr getRenamed();
-      return finalRenamed;
+      return renamedInstr;
     endmethod
 
     method Action testFreeListAlloc();
-      let maybeTag <- freelist.tryAllocate();
-      $display("[FreeList Test] Allocated tag: %s", fshow(maybeTag));
+      $display("[FreeList Test] Method not implemented in simplified rename stage");
     endmethod
 
     method Action clearRAT(RegIndex r);

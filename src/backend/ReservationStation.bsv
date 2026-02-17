@@ -45,13 +45,14 @@ package ReservationStation;
       for (Integer i = 0; i < valueOf(RS_SIZE); i = i+1) begin
         if (isValid(slots[i])) begin
           let e = fromMaybe(?, slots[i]);
-          $display("[RS] Slot %0d: op=%0d dest=%0d src1=%0d ready=%0d src2=%0d ready=%0d rob=%0d", i, e.op, e.dest, e.src1, e.src1Ready, e.src2, e.src2Ready, e.robTag.idx);
+          $display("[RS] Slot %0d: op=%0d dest=%0d src1=%0d ready=%0d src2=%0d ready=%0d rob=%0d", i, e.opcode, e.dest, e.src1, e.src1Ready, e.src2, e.src2Ready, e.robTag.idx);
         end
       end
     endrule
 
     method Action enq(RSEntry entry);
       let freeIdx = findFree(slots);
+      $display("[RS][ENQ] entry.opcode=%0d dest=%0d src1=%0d src2=%0d rob=%0d", entry.opcode, entry.dest, entry.src1, entry.src2, entry.robTag.idx);
       if (isValid(freeIdx)) begin
         slots[validValue(freeIdx)] <= Valid(entry);
       end
@@ -63,6 +64,7 @@ package ReservationStation;
       if (isValid(readyIdx)) begin
         let idx = validValue(readyIdx);
         let e = fromMaybe(?, slots[idx]);
+        $display("[RS][DEQ] entry.opcode=%0d dest=%0d src1=%0d src2=%0d rob=%0d", e.opcode, e.dest, e.src1, e.src2, e.robTag.idx);
         slots[idx] <= Invalid;
         return e;
       end 

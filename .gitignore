@@ -33,4 +33,4 @@ bsc.dir/
 *.ba
 *.bi
 *.bf
-*.ba.debug
+*.ba.debugoutput.txt

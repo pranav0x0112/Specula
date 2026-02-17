@@ -9,8 +9,13 @@ package Common;
     OP_IMM, OP, LUI, AUIPC, JAL, JALR, BRANCH, LOAD, STORE, MISC_MEM, SYSTEM, INVALID
   } Opcode deriving (Bits, Eq, FShow);
 
+  typedef enum {
+    ALU_ADD, ALU_SUB, ALU_AND, ALU_OR,
+    ALU_BEQ, ALU_BNE, ALU_BLT, ALU_BGE
+  } ALUOp deriving (Bits, Eq, FShow);
+
   typedef struct {
-    Opcode opcode;
+    ALUOp opcode;
     RegIndex rd;
     RegIndex rs1;
     RegIndex rs2;
@@ -41,29 +46,71 @@ package Common;
 
   function Instruction getInstruction(Bit#(32) pc);
     case(pc)
-      0: return 32'h00500093;   // addi x1, x0, 5   -> x1 = 5
-      4: return 32'h00108113;   // addi x2, x1, 1   -> x2 = x1 + 1 = 6 (depends on x1) 
-      8: return 32'h00200193;   // addi x3, x0, 2   -> x3 = 2 (independent)
-      12: return 32'h003100B3;  // add  x1, x2, x3  -> x1 = x2 + x3 = 8 (depends on x2,x3)
+<<<<<<< HEAD
+      32'h00000000: return 32'h00500093; // addi x1, x0, 5           (x1 = 5)
+      32'h00000004: return 32'h00500113; // addi x2, x0, 5           (x2 = 5)
+      32'h00000008: return 32'h00208263; // beq x1, x2, +4 → 0x0C    (branch to skip addi x3)
+      32'h0000000C: return 32'h00A00293; // addi x5, x0, 10          (branch target, x5=10)
+      32'h00000010: return 32'h00000013; // nop
+      32'h00000014: return 32'h00000013; // nop
+      32'h00000018: return 32'h00000013; // nop
+      32'h0000001C: return 32'h00000013; // nop
+      32'h00000020: return 32'h00000013; // nop
       default: return 32'h00000013; // nop (addi x0, x0, 0)
     endcase
   endfunction
 
   function Decoded decode(Instruction instr, Bit#(32) pc);
-    Decoded d;
-    d.opcode = case (instr[6:0])
-      7'b0010011: OP_IMM;    // I-type (addi, andi, ori, etc.)
-      7'b0110011: OP;        // R-type (add, sub, and, or, etc.)
-      7'b1100011: BRANCH;    // B-type (beq, bne, etc.)
-      7'b1101111: JAL;       // J-type (jal)
-      7'b1100111: JALR;      // I-type (jalr)
-      7'b0000011: LOAD;      // I-type (lw, etc.)
-      7'b0100011: STORE;     // S-type (sw, etc.)
-      default: INVALID;
-    endcase;
+    Bit#(7) actualOpcode = instr[6:0];
+    Bit#(3) funct3 = instr[14:12];
     
-    d.rd = instr[11:7];
-    d.funct3 = instr[14:12];
+    // Determine instruction class and ALUOp
+    ALUOp aluOp;
+    if (actualOpcode == 7'b0110011) begin  // R-type
+      if (funct3 == 3'b000) aluOp = ALU_ADD;      // ADD/SUB
+      else if (funct3 == 3'b111) aluOp = ALU_AND;  // AND
+      else if (funct3 == 3'b110) aluOp = ALU_OR;   // OR
+      else aluOp = ALU_ADD;
+    end else if (actualOpcode == 7'b0010011) begin  // I-type (ADDI, etc.)
+      aluOp = ALU_ADD;
+    end else if (actualOpcode == 7'b1100011) begin  // Branch (B-type)
+      if (funct3 == 3'b000) aluOp = ALU_BEQ;
+      else if (funct3 == 3'b001) aluOp = ALU_BNE;
+      else if (funct3 == 3'b100) aluOp = ALU_BLT;
+      else if (funct3 == 3'b101) aluOp = ALU_BGE;
+      else aluOp = ALU_BEQ;
+    end else begin
+      aluOp = ALU_ADD;  // Default
+    end
+    
+    // Extract immediates based on instruction type
+    Bit#(32) imm = 0;
+    RegIndex rs2Field = 0;
+    
+    if (actualOpcode == 7'b0010011) begin  // I-type immediate
+      imm = signExtend(instr[31:20]);
+      rs2Field = 0;  // I-type doesn't use rs2
+    end else if (actualOpcode == 7'b1100011) begin  // B-type immediate
+      // Branch immediate layout: imm[12|10:5|4:1|11]
+      // instr layout: [31|30:25|11:8|7]
+      Bit#(1) bit12 = instr[31];
+      Bit#(6) bits10_5 = instr[30:25];
+      Bit#(4) bits4_1 = instr[11:8];
+      Bit#(1) bit11 = instr[7];
+      Bit#(12) branchImmTmp = {bit12, bits10_5, bits4_1, bit11};
+      imm = signExtend(branchImmTmp);
+      rs2Field = instr[24:20];  // B-type uses rs2
+    end else begin
+      rs2Field = instr[24:20];  // R-type and other types use rs2
+    end
+    
+    return Decoded {
+      opcode: aluOp,
+      rd: instr[11:7],
+      rs1: instr[19:15],
+      rs2: rs2Field,
+      imm: imm
+    };
     d.rs1 = instr[19:15];
     d.rs2 = case (instr[6:0])
       7'b0110011: instr[24:20]; // R-type (add, sub, etc.)
@@ -93,6 +140,7 @@ package Common;
     endcase
     
     return d;
+>>>>>>> main
   endfunction
 
   function Bit#(32) signExtend(Bit#(12) imm12);
@@ -124,32 +172,30 @@ package Common;
     return extended;
   endfunction
 
+  function Bool signedLT(Bit#(32) a, Bit#(32) b);
+    Int#(32) sa = unpack(a);
+    Int#(32) sb = unpack(b);
+    return sa < sb;
+  endfunction
+
+  function Bool signedGE(Bit#(32) a, Bit#(32) b);
+    Int#(32) sa = unpack(a);
+    Int#(32) sb = unpack(b);
+    return sa >= sb;
+  endfunction
+
   typedef struct {
     UInt#(6) idx;
   } ROBTag deriving (Bits, FShow);
 
-  typedef enum {
-    ALU_ADD, ALU_SUB, ALU_AND, ALU_OR, ALU_XOR, ALU_SLL, ALU_SRL, ALU_SRA,
-    ALU_ADDI, ALU_ANDI, ALU_ORI, ALU_XORI, ALU_SLLI
-  } ALUOp deriving (Bits, Eq, FShow);
-
   typedef struct {
-    ALUOp op;
+    ALUOp opcode;
     PhysRegTag src1;
     PhysRegTag src2;
     PhysRegTag dest;
   } ALUInstr deriving (Bits, FShow);
 
   typedef struct {
-    ALUOp op;
-    PhysRegTag src1;
-    Bool src1Ready;
-    PhysRegTag src2;
-    Bool src2Ready;
-    Bit#(32) immediate;  
-    Bool useImmediate;   
-    PhysRegTag dest;
-    ROBTag robTag;
-  } RSEntry deriving (Bits, FShow);
+  } BranchMetadata deriving (Bits, FShow);
 
 endpackage

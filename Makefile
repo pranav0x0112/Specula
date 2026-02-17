@@ -25,7 +25,7 @@ $(OUT_DIR)/$(EXE): $(SRC_DIR)/SpeculaCore.bsv | $(OUT_DIR)
 
 run: all
 	@echo "[3/3] Running simulation"
-	./$(OUT_DIR)/$(EXE)
+	./$(OUT_DIR)/$(EXE) | tee output.txt
 
 $(OUT_DIR):
 	mkdir -p $(OUT_DIR)

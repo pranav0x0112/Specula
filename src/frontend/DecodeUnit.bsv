@@ -9,7 +9,7 @@ package DecodeUnit;
 
   module mkDecodeUnit(IfcDecodeUnit);
     Reg#(Decoded) decoded <- mkReg(Decoded {
-      opcode: OP_IMM,
+      opcode: ALU_ADD,
       rd: 0,
       rs1: 0,
       rs2: 0,

@@ -10,7 +10,7 @@ package FetchUnit;
 
   module mkFetchUnit(IfcFetchUnit);
     Reg#(Bit#(32)) pcReg <- mkReg(0);
-    Reg#(Instruction) instr <- mkReg(0);
+    Reg#(Instruction) fetchedInstr <- mkReg(0);
     Reg#(Bool) started <- mkReg(False);
 
     let maxPC = 32'h00000100;
@@ -22,24 +22,16 @@ package FetchUnit;
       noAction;
     endrule
 
-    rule doFetch(started && pcReg < maxPC);
-      instr <= getInstruction(pcReg);
-      $display("[Fetch] PC: %08x | instr: %08x", pcReg, getInstruction(pcReg));
-      pcReg <= pcReg + 4;
-    endrule
-
-    rule stopFetching(started && pcReg >= maxPC);
-      $display("[FetchUnit] Stopping fetch: reached PC limit = %h", pcReg);
-      started <= False;
-    endrule
-
     method Action start(Bit#(32) pc);
       pcReg <= pc;
+      let instr = getInstruction(pc);
+      fetchedInstr <= instr;
+      $display("[Fetch] PC: %08x | instr: %08x", pc, instr);
       started <= True;
     endmethod
     
     method Instruction getFetched();
-      return instr;
+      return fetchedInstr;
     endmethod
   endmodule
 
