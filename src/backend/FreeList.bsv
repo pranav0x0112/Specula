@@ -13,6 +13,11 @@ package FreeList;
 
     Vector#(NUM_PHYS_REGS, Reg#(Bool)) freelist <- replicateM(mkReg(True));
     
+    // Reserve p0 for the zero register (never allocate it)
+    rule init_p0;
+      freelist[0] <= False;
+    endrule
+    
     function Bool orFn(Bool a, Bool b);
       return a || b;
     endfunction
