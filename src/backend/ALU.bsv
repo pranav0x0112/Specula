@@ -54,7 +54,6 @@ package ALU;
         ALU_SUB: res = r.a - r.b;
         ALU_AND: res = r.a & r.b;
         ALU_OR: res = r.a | r.b;
-<<<<<<< HEAD
         ALU_BEQ: begin
           isBranch = True;
           actualTaken = (r.a == r.b);

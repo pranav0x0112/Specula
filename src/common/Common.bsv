@@ -46,7 +46,6 @@ package Common;
 
   function Instruction getInstruction(Bit#(32) pc);
     case(pc)
-<<<<<<< HEAD
       32'h00000000: return 32'h00500093; // addi x1, x0, 5           (x1 = 5)
       32'h00000004: return 32'h00500113; // addi x2, x0, 5           (x2 = 5)
       32'h00000008: return 32'h00208263; // beq x1, x2, +4 → 0x0C    (branch to skip addi x3)

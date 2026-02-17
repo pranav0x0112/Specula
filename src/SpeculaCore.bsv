@@ -103,7 +103,6 @@ package SpeculaCore;
       if (rs.notFull) begin
         let r = rename.getRenamed();
 
-<<<<<<< HEAD
         // Don't allocate physical register for writes to x0
         Maybe#(PhysRegTag) maybeDestTag = tagged Invalid;
         PhysRegTag destTag = 0;  // Default to p0 for x0
