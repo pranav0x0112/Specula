@@ -103,6 +103,7 @@ package SpeculaCore;
       if (rs.notFull) begin
         let r = rename.getRenamed();
 
+<<<<<<< HEAD
         // Don't allocate physical register for writes to x0
         Maybe#(PhysRegTag) maybeDestTag = tagged Invalid;
         PhysRegTag destTag = 0;  // Default to p0 for x0
@@ -158,6 +159,9 @@ package SpeculaCore;
 
           renameDone <= False;
         end
+        $display("[DISPATCH] Sent to RS: dest=p%0d rob=%0d", r.destTag, r.robTag.idx);
+        renameDone <= False;
+>>>>>>> main
       end else begin
         $display("[DISPATCH] RS is full - stalling");
       end
@@ -180,6 +184,10 @@ package SpeculaCore;
       if (maybeHead matches tagged Valid .headInfo) begin
         match {.tag, .entry} = headInfo;
         if (entry.completed) begin
+          if (entry.dst matches tagged Valid .dstReg) begin
+            rename.clearRAT(dstReg);
+            $display("[COMMIT] Clearing RAT entry for x%0d", dstReg);
+          end
           rob.commitHead(freelist);
         end
       end
@@ -220,6 +228,9 @@ package SpeculaCore;
 
       prf.write(aluResp.dest, aluResp.result);
       prf.markReady(aluResp.dest);
+
+      rs.wakeup(aluResp.dest);
+      $display("[Writeback] Waking up instructions waiting for p%0d", aluResp.dest);
       
       $display("[Writeback] ROB[%0d] completed with result=%0d, PRF[p%0d] = %0d", 
                aluResp.robTag.idx, aluResp.result, aluResp.dest, aluResp.result);

@@ -1,3 +1,5 @@
+# command to view the simulation output is make clean && make run
+
 # ---------- CONFIG -----------
 
 TOP      ?= mkSpeculaCore

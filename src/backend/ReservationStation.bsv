@@ -12,6 +12,7 @@ package ReservationStation;
     method ActionValue#(RSEntry) deq();
     method Bool notFull;
     method Bool notEmpty;
+    method Action wakeup(PhysRegTag tag); 
   endinterface
 
   module mkReservationStation(ReservationStationIfc);
@@ -75,6 +76,28 @@ package ReservationStation;
     
     method Bool notFull = isValid(findFree(slots));
     method Bool notEmpty = isValid(findReady(slots));
+
+    method Action wakeup(PhysRegTag tag);
+      Vector#(RS_SIZE, Maybe#(RSEntry)) newSlots = slots;
+      for (Integer i = 0; i < valueOf(RS_SIZE); i = i + 1) begin
+        if (isValid(newSlots[i])) begin
+          let e = fromMaybe(?, newSlots[i]);
+
+          if (e.src1 == tag && !e.src1Ready) begin
+            e.src1Ready = True;
+            $display("[RS] Wakeup: Slot %0d src1 now ready (tag p%0d)", i, tag);
+          end
+          
+          if (e.src2 == tag && !e.src2Ready) begin
+            e.src2Ready = True;
+            $display("[RS] Wakeup: Slot %0d src2 now ready (tag p%0d)", i, tag);
+          end
+          
+          newSlots[i] = Valid(e);
+        end
+      end
+      slots <= newSlots;
+    endmethod
 
   endmodule
 endpackage

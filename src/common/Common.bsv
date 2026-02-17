@@ -19,7 +19,10 @@ package Common;
     RegIndex rd;
     RegIndex rs1;
     RegIndex rs2;
+    Bit#(3) funct3;
+    Bit#(7) funct7;
     Bit#(32) imm;
+    Instruction raw;
   } Decoded deriving (Bits, FShow);
 
   typedef struct {
@@ -43,6 +46,7 @@ package Common;
 
   function Instruction getInstruction(Bit#(32) pc);
     case(pc)
+<<<<<<< HEAD
       32'h00000000: return 32'h00500093; // addi x1, x0, 5           (x1 = 5)
       32'h00000004: return 32'h00500113; // addi x2, x0, 5           (x2 = 5)
       32'h00000008: return 32'h00208263; // beq x1, x2, +4 → 0x0C    (branch to skip addi x3)
@@ -107,6 +111,36 @@ package Common;
       rs2: rs2Field,
       imm: imm
     };
+    d.rs1 = instr[19:15];
+    d.rs2 = case (instr[6:0])
+      7'b0110011: instr[24:20]; // R-type (add, sub, etc.)
+      7'b1100011: instr[24:20]; // B-type (beq, bne, etc.)
+      7'b0100011: instr[24:20]; // S-type (sw, etc.)
+      default: 5'b00000;        // I-type and others: rs2 = x0
+    endcase;
+    d.funct7 = instr[31:25];
+    d.raw = instr;
+    
+    case (instr[6:0])
+      7'b1100011: begin // B-type
+        d.imm = signExtend13({instr[31], instr[7], instr[30:25], instr[11:8], 1'b0});
+      end
+      7'b1101111: begin // JAL (J-type)  
+        d.imm = signExtend21({instr[31], instr[19:12], instr[20], instr[30:21], 1'b0});
+      end
+      7'b1100111: begin // JALR (I-type)
+        d.imm = signExtend(instr[31:20]);
+      end
+      7'b0100011: begin // S-type (store)
+        d.imm = signExtend({instr[31:25], instr[11:7]});
+      end
+      default: begin
+        d.imm = signExtend(instr[31:20]); // I-type default
+      end
+    endcase
+    
+    return d;
+>>>>>>> main
   endfunction
 
   function Bit#(32) signExtend(Bit#(12) imm12);
@@ -115,6 +149,26 @@ package Common;
       extended = {20'hFFFFF, imm12};
     else
       extended = {20'h00000, imm12};
+    return extended;
+  endfunction
+  
+  // Sign extend 13-bit immediate (for B-type)
+  function Bit#(32) signExtend13(Bit#(13) imm13);
+    Bit#(32) extended;
+    if (imm13[12] == 1)
+      extended = {19'h7FFFF, imm13};
+    else
+      extended = {19'h00000, imm13};
+    return extended;
+  endfunction
+  
+  // Sign extend 21-bit immediate (for J-type)
+  function Bit#(32) signExtend21(Bit#(21) imm21);
+    Bit#(32) extended;
+    if (imm21[20] == 1)
+      extended = {11'h7FF, imm21};
+    else
+      extended = {11'h000, imm21};
     return extended;
   endfunction
 
@@ -142,22 +196,6 @@ package Common;
   } ALUInstr deriving (Bits, FShow);
 
   typedef struct {
-    ALUOp opcode;
-    PhysRegTag src1;
-    Bool src1Ready;
-    PhysRegTag src2;
-    Bool src2Ready;
-    Bit#(32) immediate;  
-    Bool useImmediate;   
-    PhysRegTag dest;
-    ROBTag robTag;
-    Bit#(32) pc;
-  } RSEntry deriving (Bits, FShow);
-
-  typedef struct {
-    Bool isBranch;
-    Bit#(32) pc;
-    Bit#(32) predictedTarget;
   } BranchMetadata deriving (Bits, FShow);
 
 endpackage

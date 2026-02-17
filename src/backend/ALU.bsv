@@ -3,6 +3,12 @@ package ALU;
   import Common::*;
   import FIFOF::*;
 
+  function Bit#(32) signedShiftRight(Bit#(32) val, Bit#(5) shamt);
+    Int#(32) signedVal = unpack(val);
+    Int#(32) shifted = signedVal >> shamt;
+    return pack(shifted);
+  endfunction
+
   typedef struct {
     ALUOp opcode;
     Data a;
@@ -48,6 +54,7 @@ package ALU;
         ALU_SUB: res = r.a - r.b;
         ALU_AND: res = r.a & r.b;
         ALU_OR: res = r.a | r.b;
+<<<<<<< HEAD
         ALU_BEQ: begin
           isBranch = True;
           actualTaken = (r.a == r.b);

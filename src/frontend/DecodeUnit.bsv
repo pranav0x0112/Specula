@@ -13,7 +13,10 @@ package DecodeUnit;
       rd: 0,
       rs1: 0,
       rs2: 0,
-      imm: 0
+      funct3: 0,
+      funct7: 0,
+      imm: 0,
+      raw: 32'h00000013
     });
 
     method Action start(Instruction instr, Bit#(32) pc);
