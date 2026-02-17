@@ -140,7 +140,6 @@ package Common;
     endcase
     
     return d;
->>>>>>> main
   endfunction
 
   function Bit#(32) signExtend(Bit#(12) imm12);

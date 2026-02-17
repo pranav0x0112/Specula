@@ -159,9 +159,6 @@ package SpeculaCore;
 
           renameDone <= False;
         end
-        $display("[DISPATCH] Sent to RS: dest=p%0d rob=%0d", r.destTag, r.robTag.idx);
-        renameDone <= False;
->>>>>>> main
       end else begin
         $display("[DISPATCH] RS is full - stalling");
       end

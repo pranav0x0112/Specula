@@ -84,7 +84,6 @@ package RenameStage;
         $display("[RENAME] Stall: FreeList empty, cannot allocate dest phys-reg");
       end
     endrule
->>>>>>> main
 
     method Action start(Decoded d);
       RenamedInstr renamed = RenamedInstr {
