@@ -12,14 +12,16 @@ typedef 32 NumEntries;
 typedef struct {
   ROBTag tag;
   Maybe#(RegIndex) dst;
-  Maybe#(PhysRegTag) physDst;  
+  Maybe#(PhysRegTag) physDst;
+  Maybe#(PhysRegTag) oldPhysDst;  // Physical register being replaced
   Bool completed;
   Data data;
 } ROBEntry deriving (Bits, FShow);
 
 interface ROB_IFC;
   method Bool canAllocate();
-  method ActionValue#(ROBTag) allocate(Maybe#(RegIndex) dst, Maybe#(PhysRegTag) physDst);
+  method Bool isEmpty();
+  method ActionValue#(ROBTag) allocate(Maybe#(RegIndex) dst, Maybe#(PhysRegTag) physDst, Maybe#(PhysRegTag) oldPhysDst);
   method Action writeResult(ROBTag tag, Data data);
   method Action markCompleted(ROBTag tag);
   method Action writeResultAndComplete(ROBTag tag, Data data);
@@ -42,7 +44,11 @@ module mkROB(ROB_IFC);
     return (count < fromInteger(valueOf(NumEntries)));
   endmethod
 
-  method ActionValue#(ROBTag) allocate(Maybe#(RegIndex) dst, Maybe#(PhysRegTag) physDst);
+  method Bool isEmpty();
+    return (count == 0);
+  endmethod
+
+  method ActionValue#(ROBTag) allocate(Maybe#(RegIndex) dst, Maybe#(PhysRegTag) physDst, Maybe#(PhysRegTag) oldPhysDst);
     if (!(count < fromInteger(valueOf(NumEntries))))
       $fatal(1, "ROB full!");
 
@@ -51,6 +57,7 @@ module mkROB(ROB_IFC);
       tag: tag,
       dst: dst,
       physDst: physDst,
+      oldPhysDst: oldPhysDst,
       completed: False,
       data: unpack(0)
     };
@@ -72,6 +79,7 @@ module mkROB(ROB_IFC);
       tag: robEntries[tag.idx].tag,
       dst: robEntries[tag.idx].dst,
       physDst: robEntries[tag.idx].physDst,
+      oldPhysDst: robEntries[tag.idx].oldPhysDst,
       completed: True,
       data: data
     };
@@ -86,11 +94,11 @@ module mkROB(ROB_IFC);
 
   method Action commitHead(FreeList_IFC freeList);
     if (count > 0 && robEntries[head].completed) begin
-      if (robEntries[head].physDst matches tagged Valid .physReg) begin
-        freeList.free(physReg);
-        $display("[ROB] Committing ROB[%0d]: freed physical register p%0d", head, physReg);
+      if (robEntries[head].oldPhysDst matches tagged Valid .oldPhysReg) begin
+        freeList.free(oldPhysReg);
+        $display("[ROB] Committing ROB[%0d]: freed old physical register p%0d", head, oldPhysReg);
       end else begin
-        $display("[ROB] Committing ROB[%0d]: no physical register to free", head);
+        $display("[ROB] Committing ROB[%0d]: no old physical register to free", head);
       end
       
       head <= (head + 1 == fromInteger(valueOf(NumEntries))) ? 0 : head + 1;
