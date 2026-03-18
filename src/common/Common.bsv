@@ -3,6 +3,7 @@ package Common;
   typedef Bit#(5) RegIndex;
   typedef Bit#(32) Instruction;
   typedef Bit#(32) Data;
+  typedef Bit#(32) Addr;
   typedef Maybe#(ROBTag) RATEntry;
 
   typedef enum {
@@ -46,11 +47,16 @@ package Common;
 
   function Instruction getInstruction(Bit#(32) pc);
     case(pc)
-      32'h00000000: return 32'h00500093; // addi x1, x0, 5           (x1 = 5)
-      32'h00000004: return 32'h00500113; // addi x2, x0, 5           (x2 = 5)
-      32'h00000008: return 32'h00208263; // beq x1, x2, +4 → 0x0C    (branch to skip addi x3)
-      32'h0000000C: return 32'h00A00293; // addi x5, x0, 10          (branch target, x5=10)
-      32'h00000010: return 32'h00000013; // nop
+      // Out-of-order execution test:
+      // Inst 1: addi x1, x0, 5      (no deps, executes first)
+      // Inst 2: add  x2, x1, x1     (depends on x1, BLOCKED)
+      // Inst 3: addi x3, x0, 10     (no deps, can OVERTAKE inst 2!)
+      // Inst 4: addi x4, x0, 15     (no deps, can OVERTAKE inst 2!)
+      32'h00000000: return 32'h00500093; // addi x1, x0, 5
+      32'h00000004: return 32'h00108133; // add  x2, x1, x1
+      32'h00000008: return 32'h00208463; // beq x1, x2, 8 (PC + 8, jump to 0x10)
+      32'h0000000c: return 32'h00a00193; // addi x3, x0, 10
+      32'h00000010: return 32'h00f00213; // addi x4, x0, 15
       32'h00000014: return 32'h00000013; // nop
       32'h00000018: return 32'h00000013; // nop
       32'h0000001C: return 32'h00000013; // nop
@@ -88,10 +94,8 @@ package Common;
     
     if (actualOpcode == 7'b0010011) begin  // I-type immediate
       imm = signExtend(instr[31:20]);
-      rs2Field = 0;  // I-type doesn't use rs2
+      rs2Field = 0; 
     end else if (actualOpcode == 7'b1100011) begin  // B-type immediate
-      // Branch immediate layout: imm[12|10:5|4:1|11]
-      // instr layout: [31|30:25|11:8|7]
       Bit#(1) bit12 = instr[31];
       Bit#(6) bits10_5 = instr[30:25];
       Bit#(4) bits4_1 = instr[11:8];
@@ -108,37 +112,11 @@ package Common;
       rd: instr[11:7],
       rs1: instr[19:15],
       rs2: rs2Field,
-      imm: imm
+      funct3: funct3,
+      funct7: 0,
+      imm: imm,
+      raw: instr
     };
-    d.rs1 = instr[19:15];
-    d.rs2 = case (instr[6:0])
-      7'b0110011: instr[24:20]; // R-type (add, sub, etc.)
-      7'b1100011: instr[24:20]; // B-type (beq, bne, etc.)
-      7'b0100011: instr[24:20]; // S-type (sw, etc.)
-      default: 5'b00000;        // I-type and others: rs2 = x0
-    endcase;
-    d.funct7 = instr[31:25];
-    d.raw = instr;
-    
-    case (instr[6:0])
-      7'b1100011: begin // B-type
-        d.imm = signExtend13({instr[31], instr[7], instr[30:25], instr[11:8], 1'b0});
-      end
-      7'b1101111: begin // JAL (J-type)  
-        d.imm = signExtend21({instr[31], instr[19:12], instr[20], instr[30:21], 1'b0});
-      end
-      7'b1100111: begin // JALR (I-type)
-        d.imm = signExtend(instr[31:20]);
-      end
-      7'b0100011: begin // S-type (store)
-        d.imm = signExtend({instr[31:25], instr[11:7]});
-      end
-      default: begin
-        d.imm = signExtend(instr[31:20]); // I-type default
-      end
-    endcase
-    
-    return d;
   endfunction
 
   function Bit#(32) signExtend(Bit#(12) imm12);
@@ -194,6 +172,22 @@ package Common;
   } ALUInstr deriving (Bits, FShow);
 
   typedef struct {
+    ALUOp opcode;
+    PhysRegTag src1;
+    Bool src1Ready;
+    PhysRegTag src2;
+    Bool src2Ready;
+    Data immediate;
+    Bool useImmediate;
+    PhysRegTag dest;
+    ROBTag robTag;
+    Addr pc;
+  } RSEntry deriving (Bits, FShow);
+
+  typedef struct {
+    Bool isBranch;
+    Addr pc;
+    Addr predictedTarget;
   } BranchMetadata deriving (Bits, FShow);
 
 endpackage

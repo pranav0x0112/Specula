@@ -3,7 +3,6 @@ package SpeculaCore;
   import FetchUnit::*;
   import DecodeUnit::*;
   import Common::*;
-  import Dispatch::*;
   import RenameStage::*;
   import PRF::*;
   import FreeList::*;
@@ -17,7 +16,6 @@ package SpeculaCore;
   module mkSpeculaCore(Empty);
     IfcFetchUnit fetch <- mkFetchUnit;
     IfcDecodeUnit decode <- mkDecodeUnit;
-    IfcDispatch dispatch <- mkDispatch;
     RenameStage_IFC rename <- mkRenameStage;
     PRF prf <- mkPRF;
     FreeList_IFC freelist <- mkFreeList; 
@@ -43,13 +41,12 @@ package SpeculaCore;
       predictedTarget: 0
     }));
     
-    // FIFO to flow branch metadata alongside instructions through the pipeline
     FIFOF#(BranchMetadata) branchMetaQ <- mkFIFOF();
-    
-    // Architectural register mapping: arch reg -> current physical reg
+    FIFOF#(RenamedInstr) renamedInstrQ <- mkFIFOF();
+
     Vector#(32, Reg#(PhysRegTag)) archRegMap <- replicateM(mkReg(0));
-    // Track which arch regs have been written (to avoid freeing on first write)
     Vector#(32, Reg#(Bool)) archRegWritten <- replicateM(mkReg(False));
+    Vector#(32, Reg#(Bool)) physRegReady <- replicateM(mkReg(True));
 
     rule doFetch (!fetchStarted && !decodeStarted && !halted);
       fetch.start(pc);
@@ -67,24 +64,21 @@ package SpeculaCore;
 
     rule doDecodeComplete (decodeStarted && !renameDone && !halted);
       let d = decode.getDecoded();
-      let pred <- bp.predict(lastFetchedPC);  // Predict based on the instruction's PC
+      let pred <- bp.predict(lastFetchedPC);  
       
       $display("[Specula] Decoded instr: %h at PC %h | opcode=%0d rd=%0d rs1=%0d rs2=%0d imm=%h", 
                lastFetchedInstr, lastFetchedPC, d.opcode, d.rd, d.rs1, d.rs2, d.imm);
       $display("[BP] PC=%h prediction=%b target=%h valid=%b", lastFetchedPC, pred.prediction, pred.targetAddr, pred.isValid);
-      
-      // Pass decoded instruction to rename stage
+
       rename.start(d);
       
-      // Store branch prediction metadata for later resolution
       Bool isBranchInstr = (d.opcode == ALU_BEQ || d.opcode == ALU_BNE || d.opcode == ALU_BLT || d.opcode == ALU_BGE);
       branchMetaQ.enq(BranchMetadata {
         isBranch: isBranchInstr,
         pc: lastFetchedPC,
         predictedTarget: pred.targetAddr
       });
-      
-      // Only use predictor result if this instruction is a branch
+
       if (isBranchInstr) begin
         pc <= pred.targetAddr;
         $display("[Specula] BRANCH detected! Using predicted PC: %h", pred.targetAddr);
@@ -98,72 +92,76 @@ package SpeculaCore;
     endrule
 
     rule doDispatch (renameDone);
-      $display("[DEBUG] doDispatch rule firing! renameDone=%b", renameDone);
+      $display("[DEBUG] doDispatch rule firing to enqueue! renameDone=%b", renameDone);
       
-      if (rs.notFull) begin
-        let r = rename.getRenamed();
-
-        // Don't allocate physical register for writes to x0
-        Maybe#(PhysRegTag) maybeDestTag = tagged Invalid;
-        PhysRegTag destTag = 0;  // Default to p0 for x0
-        Maybe#(PhysRegTag) oldPhysDst = tagged Invalid;
-        
-        if (r.instr.rd != 0) begin
-          let allocResult <- freelist.tryAllocate();
-          if (allocResult matches tagged Valid .tag) begin
-            destTag = tag;
-            maybeDestTag = tagged Valid tag;
-            // Save old physical register only if this arch reg was previously written
-            if (archRegWritten[r.instr.rd]) begin
-              PhysRegTag oldDestPhysReg = archRegMap[r.instr.rd];
-              oldPhysDst = tagged Valid oldDestPhysReg;
-            end
-          end else begin
-            $display("[DISPATCH] No free physical registers - stalling");
-            renameDone <= False;
-          end
-        end
-        
-        if (r.instr.rd == 0 || isValid(maybeDestTag)) begin
-          let robTag <- rob.allocate(tagged Valid r.instr.rd, (r.instr.rd == 0 ? tagged Invalid : tagged Valid destTag), oldPhysDst);
-
-          Bool isBranchOp = (r.instr.opcode == ALU_BEQ || r.instr.opcode == ALU_BNE || 
-                             r.instr.opcode == ALU_BLT || r.instr.opcode == ALU_BGE);
-          
-          // Look up current physical registers for source operands
-          PhysRegTag src1PhysReg = archRegMap[r.instr.rs1];
-          PhysRegTag src2PhysReg = archRegMap[r.instr.rs2];
-          
-          // Update mapping: this instruction's dest arch reg now maps to new phys reg
-          if (r.instr.rd != 0) begin
-            archRegMap[r.instr.rd] <= destTag;
-            archRegWritten[r.instr.rd] <= True;
-          end
-          
-          let rsEntry = RSEntry {
-            opcode: r.instr.opcode,
-            src1: src1PhysReg,
-            src1Ready: True,
-            src2: src2PhysReg,
-            src2Ready: True,
-            immediate: r.instr.imm,
-            useImmediate: (r.instr.opcode == ALU_ADD || r.instr.opcode == ALU_AND || r.instr.opcode == ALU_OR),
-            dest: destTag,
-            robTag: robTag,
-            pc: lastFetchedPC
-          };
-          
-          rs.enq(rsEntry);
-          $display("[DISPATCH] Sent to RS: dest=p%0d rob=%0d", destTag, robTag.idx);
-
-          renameDone <= False;
-        end
-      end else begin
-        $display("[DISPATCH] RS is full - stalling");
-      end
+      let r = rename.getRenamed();
+      
+      renamedInstrQ.enq(r);
+      $display("[DISPATCH] Enqueued to buffer: rd=x%0d opcode=%0d", r.instr.rd, r.instr.opcode);
+      
+      renameDone <= False;
     endrule
 
-    // Removed doRename rule - functionality moved to doDecodeComplete
+    rule doDispatchToRS (renamedInstrQ.notEmpty && rs.notFull);
+      $display("[DEBUG] doDispatchToRS rule firing!");
+      
+      let r = renamedInstrQ.first;
+      renamedInstrQ.deq;
+
+      Maybe#(PhysRegTag) maybeDestTag = tagged Invalid;
+      PhysRegTag destTag = 0;  
+      Maybe#(PhysRegTag) oldPhysDst = tagged Invalid;
+      
+      if (r.instr.rd != 0) begin
+        let allocResult <- freelist.tryAllocate();
+        if (allocResult matches tagged Valid .tag) begin
+          destTag = tag;
+          maybeDestTag = tagged Valid tag;
+          if (archRegWritten[r.instr.rd]) begin
+            PhysRegTag oldDestPhysReg = archRegMap[r.instr.rd];
+            oldPhysDst = tagged Valid oldDestPhysReg;
+          end
+        end else begin
+          $display("[DISPATCH] No free physical registers - re-queueing instruction");
+          renamedInstrQ.enq(r);
+        end
+      end
+      
+      if (r.instr.rd == 0 || isValid(maybeDestTag)) begin
+        let robTag <- rob.allocate(tagged Valid r.instr.rd, (r.instr.rd == 0 ? tagged Invalid : tagged Valid destTag), oldPhysDst);
+
+        Bool isBranchOp = (r.instr.opcode == ALU_BEQ || r.instr.opcode == ALU_BNE || 
+                           r.instr.opcode == ALU_BLT || r.instr.opcode == ALU_BGE);
+        
+        PhysRegTag src1PhysReg = archRegMap[r.instr.rs1];
+        PhysRegTag src2PhysReg = archRegMap[r.instr.rs2];
+        
+        if (r.instr.rd != 0) begin
+          archRegMap[r.instr.rd] <= destTag;
+          archRegWritten[r.instr.rd] <= True;
+          physRegReady[destTag] <= False;
+        end
+
+        Bit#(7) actualOpcode = r.instr.raw[6:0];
+        Bool shouldUseImm = (actualOpcode == 7'b0010011) || (actualOpcode == 7'b1100011);
+        
+        let rsEntry = RSEntry {
+          opcode: r.instr.opcode,
+          src1: src1PhysReg,
+          src1Ready: physRegReady[src1PhysReg],
+          src2: src2PhysReg,
+          src2Ready: physRegReady[src2PhysReg],
+          immediate: r.instr.imm,
+          useImmediate: shouldUseImm,
+          dest: destTag,
+          robTag: robTag,
+          pc: lastFetchedPC
+        };
+        
+        rs.enq(rsEntry);
+        $display("[DISPATCH] Sent to RS: dest=p%0d rob=%0d", destTag, robTag.idx);
+      end
+    endrule
 
     rule haltPC(pc >= maxPC && !halted);
       $display("[Specula] Halting at PC: %h", pc);
@@ -231,26 +229,23 @@ package SpeculaCore;
       $display("[Writeback] ROB[%0d] completed with result=%0d, PRF[p%0d] = %0d", 
                aluResp.robTag.idx, aluResp.result, aluResp.dest, aluResp.result);
       
-      // Branch resolution: compare prediction vs actual outcome
       if (aluResp.isBranch && branchMd.isBranch) begin
         let mispredicted = (branchMd.predictedTarget != aluResp.actualTarget);
         $display("[Branch Resolution] PC=%h predicted=%h actual=%h | %s", 
                  branchMd.pc, branchMd.predictedTarget, aluResp.actualTarget,
                  mispredicted ? "MISPREDICTED!" : "correct");
         
-        // Update predictor with actual outcome
         BranchUpdate upd = BranchUpdate {
           pc: branchMd.pc,
           targetAddr: aluResp.actualTarget,
           taken: aluResp.actualTaken,
-          newHistory: 0  // The predictor will compute this internally
+          newHistory: 0  
         };
         bp.update(upd);
         
         if (mispredicted) begin
           $display("[Misprediction] Flushing pipeline and recovering PC to %h", aluResp.actualTarget);
           pc <= aluResp.actualTarget;
-          // TODO: flush pipeline stages
         end
       end
     endrule
